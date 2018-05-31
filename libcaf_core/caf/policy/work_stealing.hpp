@@ -31,7 +31,7 @@
 
 #include "caf/policy/unprofiled.hpp"
 
-#include "caf/detail/double_ended_queue.hpp"
+#include "caf/detail/thread_safe_queue.hpp"
 
 namespace caf {
 namespace policy {
@@ -43,23 +43,16 @@ public:
   ~work_stealing() override;
 
   // A thread-safe queue implementation.
-  using queue_type = detail::double_ended_queue<resumable>;
+  using queue_type = detail::thread_safe_queue<resumable>;
 
   using usec = std::chrono::microseconds;
 
-  // configuration for aggressive/moderate/relaxed poll strategies.
+  // Configuration for aggressive/moderate/relaxed poll strategies.
   struct poll_strategy {
     size_t attempts;
     size_t step_size;
     size_t steal_interval;
     usec sleep_duration;
-  };
-
-  // what is needed to implement the waiting strategy. 
-  struct wait_strategy {
-    std::mutex lock;
-    std::condition_variable cv;
-    bool sleeping{false};
   };
 
   // The coordinator has only a counter for round-robin enqueue to its workers.
@@ -99,7 +92,6 @@ public:
     std::default_random_engine rengine;
     std::uniform_int_distribution<size_t> uniform;
     poll_strategy strategies[3];
-    wait_strategy waitdata;
   };
 
   // Goes on a raid in quest for a shiny new job.
@@ -115,7 +107,7 @@ public:
     if (victim == self->id())
       victim = p->num_workers() - 1;
     // steal oldest element from the victim's queue
-    return d(p->worker_by_id(victim)).queue.take_tail();
+    return d(p->worker_by_id(victim)).queue.try_take_tail();
   }
 
   template <class Coordinator>
@@ -127,26 +119,18 @@ public:
   template <class Worker>
   void external_enqueue(Worker* self, resumable* job) {
     d(self).queue.append(job);
-    auto& lock = d(self).waitdata.lock;
-    auto& cv = d(self).waitdata.cv;
-    { // guard scope
-      std::unique_lock<std::mutex> guard(lock);	
-      // check if the worker is sleeping 
-      if (d(self).waitdata.sleeping && !d(self).queue.empty() ) 
-        cv.notify_one(); 
-    }
   }
 
   template <class Worker>
   void internal_enqueue(Worker* self, resumable* job) {
-    d(self).queue.prepend(job);
+    d(self).queue.internal_prepend(job);
   }
 
   template <class Worker>
   void resume_job_later(Worker* self, resumable* job) {
     // job has voluntarily released the CPU to let others run instead
     // this means we are going to put this job to the very end of our queue
-    d(self).queue.append(job);
+    d(self).queue.internal_append(job);
   }
 
   template <class Worker>
@@ -158,8 +142,9 @@ public:
     auto& strategies = d(self).strategies;
     resumable* job = nullptr;
     for (int k = 0; k < 2; ++k) {  // iterate over the first two strategies
-      for (size_t i = 0; i < strategies[k].attempts; i += strategies[k].step_size) {
-        job = d(self).queue.take_head();
+      for (size_t i = 0; i < strategies[k].attempts;
+           i += strategies[k].step_size) {
+        job = d(self).queue.try_take_head();
         if (job)
           return job;
         // try to steal every X poll attempts
@@ -176,35 +161,22 @@ public:
     // and falling to sleep on a condition variable whose timeout is the one
     // of the relaxed polling strategy
     auto& relaxed = strategies[2];
-    auto& sleeping = d(self).waitdata.sleeping;
-    auto& lock = d(self).waitdata.lock;
-    auto& cv = d(self).waitdata.cv;
-    bool notimeout = true;
-    size_t i=1;
-    do {
-      { // guard scope 
-        std::unique_lock<std::mutex> guard(lock);
-        sleeping = true;
-        if (!cv.wait_for(guard, relaxed.sleep_duration, 
-                         [&] { return !d(self).queue.empty(); }))
-          notimeout = false;
-        sleeping = false;
-      }
-      if (notimeout) {
-        job = d(self).queue.take_head();
-      } else {
-        notimeout = true;
-        if ((i % relaxed.steal_interval) == 0)
-          job = try_steal(self);			    
-      }
+    size_t i = 1;
+    for (;;) {
+      job = d(self).queue.try_take_head(relaxed.sleep_duration);
+      if (job != nullptr)
+        return job;
       ++i;
-    } while(job == nullptr);
-    return job;
+      if (i == relaxed.steal_interval) {
+        job = try_steal(self);
+        i = 0;
+      }
+    }
   }
 
   template <class Worker, class UnaryFunction>
   void foreach_resumable(Worker* self, UnaryFunction f) {
-    auto next = [&] { return d(self).queue.take_head(); };
+    auto next = [&] { return d(self).queue.try_take_head(); };
     for (auto job = next(); job != nullptr; job = next()) {
       f(job);
     }
