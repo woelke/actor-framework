@@ -5,7 +5,7 @@
  *                     | |___ / ___ \|  _|      Framework                     *
  *                      \____/_/   \_|_|                                      *
  *                                                                            *
- * Copyright 2011-2018 Dominik Charousset                                     *
+ * Copyright (C) 2011 - 2014                                                  *
  *                                                                            *
  * Distributed under the terms and conditions of the BSD 3-Clause License or  *
  * (at your option) under the terms and conditions of the Boost Software      *
@@ -16,43 +16,31 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
-#include "caf/detail/parser/ec.hpp"
+#pragma once
 
-#include "caf/error.hpp"
+#include <type_traits>
 
-namespace {
-
-constexpr const char* tbl[] = {
-  "success",
-  "trailing_character",
-  "unexpected_eof",
-  "unexpected_character",
-  "negative_duration",
-  "duration_overflow",
-  "too_many_characters",
-  "illegal_escape_sequence",
-  "unexpected_newline",
-  "integer_overflow",
-  "integer_underflow",
-  "exponent_underflow",
-  "exponent_overflow",
-  "type_mismatch",
-};
-
-} // namespace <anonymous>
+#include "caf/detail/type_traits.hpp"
 
 namespace caf {
 namespace detail {
-namespace parser {
 
-error make_error(ec code) {
-  return {static_cast<uint8_t>(code), atom("parser")};
+
+/// Moves the value from `x` if it is not a pointer (e.g., `optional` or
+/// `expected`), returns `*x` otherwise.
+template <class T>
+T& move_if_not_ptr(T* x) {
+  return *x;
 }
 
-const char* to_string(ec x) {
-  return tbl[static_cast<uint8_t>(x)];
+/// Moves the value from `x` if it is not a pointer (e.g., `optional` or
+/// `expected`), returns `*x` otherwise.
+template <class T, class E = enable_if_t<!std::is_pointer<T>::value>>
+T&& move_if_not_ptr(T& x) {
+  return std::move(*x);
 }
 
-} // namespace parser
 } // namespace detail
 } // namespace caf
+
+

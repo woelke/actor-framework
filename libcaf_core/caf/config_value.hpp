@@ -116,15 +116,6 @@ public:
   /// Returns a human-readable type name of the current value.
   const char* type_name() const noexcept;
 
-  /// Returns a human-readable type name for `T`.
-  template <class T>
-  static const char* type_name_of() noexcept {
-    using namespace detail;
-    static constexpr auto index = tl_index_of<types, T>::value;
-    static_assert(index != -1, "T is not a valid config value type");
-    return type_name_at_index(static_cast<size_t>(index));
-  }
-
   /// Returns the underlying variant.
   inline variant_type& get_data() {
     return data_;

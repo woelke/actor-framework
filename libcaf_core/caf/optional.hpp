@@ -264,6 +264,7 @@ class optional<void> {
   bool m_value;
 };
 
+/// @relates optional
 template <class Inspector, class T>
 typename std::enable_if<Inspector::reads_state,
                         typename Inspector::result_type>::type
@@ -282,6 +283,7 @@ struct optional_inspect_helper {
   }
 };
 
+/// @relates optional
 template <class Inspector, class T>
 typename std::enable_if<Inspector::writes_state,
                         typename Inspector::result_type>::type
@@ -297,7 +299,6 @@ inspect(Inspector& f, optional<T>& x) {
   });
   return f(flag, helper);
 }
-
 
 /// @relates optional
 template <class T>

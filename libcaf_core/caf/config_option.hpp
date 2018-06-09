@@ -27,108 +27,56 @@
 
 #include "caf/atom.hpp"
 #include "caf/config_value.hpp"
-#include "caf/deep_to_string.hpp"
-#include "caf/deep_to_string.hpp"
+#include "caf/detail/move_if_not_ptr.hpp"
+#include "caf/detail/parser/ec.hpp"
+#include "caf/detail/type_traits.hpp"
 #include "caf/error.hpp"
+#include "caf/expected.hpp"
 #include "caf/message.hpp"
 #include "caf/static_visitor.hpp"
 #include "caf/timestamp.hpp"
 #include "caf/variant.hpp"
 
-#include "caf/detail/type_traits.hpp"
-
 namespace caf {
-
-extern const char* type_name_visitor_tbl[];
 
 /// Helper class to generate config readers for different input types.
 class config_option {
 public:
-  using config_reader_sink = std::function<bool (size_t, config_value&,
-                                                 optional<std::ostream&>)>;
-
-  using legal_types = detail::type_list<bool, float, double, std::string,
-                                        atom_value, int8_t, uint8_t, int16_t,
-                                        uint16_t, int32_t, uint32_t, int64_t,
-                                        uint64_t, timespan>;
-
   config_option(const char* cat, const char* nm, const char* expl);
 
   virtual ~config_option();
 
-  inline const char* name() const {
+  inline const char* name() const noexcept {
     return name_.c_str();
   }
 
-  inline char short_name() const {
+  inline char short_name() const noexcept {
     return short_name_;
   }
 
-  inline const char* category() const {
+  inline const char* category() const noexcept {
     return category_;
   }
 
-  inline const char* explanation() const {
+  inline const char* explanation() const noexcept {
     return explanation_;
   }
 
   /// Returns the full name for this config option as "<category>.<long name>".
   std::string full_name() const;
 
-  /// Returns the held value as string.
-  virtual std::string to_string() const = 0;
+  /// Tries to parse `arg` into a properly typed `config_value`.
+  virtual expected<config_value> parse(const std::string& arg) = 0;
 
-  /// Returns a sink function for config readers.
-  virtual config_reader_sink to_sink() = 0;
+  /// Checks whether `x` holds a legal value for this option.
+  virtual error check(const config_value& x) = 0;
 
-  /// Returns a CLI argument parser.
-  virtual message::cli_arg to_cli_arg(bool use_caf_prefix = false) = 0;
+  /// Stores `x` in this option unless it is stateless.
+  /// @pre `check(x) == none`.
+  virtual void store(const config_value& x);
 
-  /// Returns a human-readable type name for the visited type.
-  class type_name_visitor : public static_visitor<const char*> {
-  public:
-    template <class T>
-    const char* operator()(const T&) const {
-      static constexpr bool is_int = std::is_integral<T>::value
-                                     && !std::is_same<bool, T>::value;
-      static constexpr std::integral_constant<bool, is_int> tk{};
-      static constexpr int index = idx<T>(tk);
-      static_assert(index >= 0, "illegal type in name visitor");
-      return type_name_visitor_tbl[static_cast<size_t>(index)];
-    }
-
-    template <class U>
-    const char* operator()(const std::vector<U>&) {
-      return "a list";
-    }
-
-    template <class K, class V>
-    const char* operator()(const std::map<K, V>&) {
-      return "a dictionary";
-    }
-
-    const char* operator()(const timespan&) {
-      return "a timespan";
-    }
-
-  private:
-    // Catches non-integer types.
-    template <class T>
-    static constexpr int idx(std::false_type) {
-      return detail::tl_index_of<legal_types, T>::value;
-    }
-
-    // Catches integer types.
-    template <class T>
-    static constexpr int idx(std::true_type) {
-      using squashed = detail::squashed_int_t<T>;
-      return detail::tl_index_of<legal_types, squashed>::value;
-    }
-  };
-
-protected:
-  void report_type_error(size_t ln, config_value& x, const char* expected,
-                         optional<std::ostream&> out);
+  /// Returns whether this option is a boolean flag.
+  virtual bool is_flag() noexcept = 0;
 
 private:
   const char* category_;
@@ -140,55 +88,63 @@ private:
 template <class T>
 class config_option_impl : public config_option {
 public:
-  config_option_impl(T& ref, const char* ctg, const char* nm, const char* xp)
-      : config_option(ctg, nm, xp),
+  config_option_impl(const char* ctg, const char* nm, const char* xp)
+      : config_option(ctg, nm, xp) {
+    // nop
+  }
+
+  expected<config_value> parse(const std::string& arg) override {
+    auto result = config_value::parse(arg);
+    if (result) {
+      if (!holds_alternative<T>(*result))
+        return make_error(detail::parser::ec::type_mismatch);
+    }
+    return result;
+  }
+
+  error check(const config_value& x) override {
+    if (holds_alternative<T>(x))
+      return none;
+    return make_error(detail::parser::ec::type_mismatch);
+  }
+
+  bool is_flag() noexcept override {
+    return std::is_same<T, bool>::value;
+  }
+};
+
+template <class T>
+class syncing_config_option : public config_option_impl<T> {
+public:
+  syncing_config_option(T& ref, const char* ctg, const char* nm, const char* xp)
+      : config_option_impl<T>(ctg, nm, xp),
         ref_(ref) {
     // nop
   }
 
-  std::string to_string() const override {
-    return deep_to_string(ref_);
-  }
-
-  message::cli_arg to_cli_arg(bool use_caf_prefix) override {
-    std::string argname;
-    if (use_caf_prefix)
-      argname = "caf#";
-    if (strcmp(category(), "global") != 0) {
-      argname += category();
-      argname += ".";
-    }
-    argname += name();
-    if (short_name() != '\0') {
-      argname += ',';
-      argname += short_name();
-    }
-    return {std::move(argname), explanation(), ref_};
-  }
-
-  config_reader_sink to_sink() override {
-    return [=](size_t ln, config_value& x, optional<std::ostream&> errors) {
-      auto res = get_if<T>(&x);
-      if (res) {
-        ref_ = *res;
-        return true;
-      }
-      type_name_visitor tnv;
-      report_type_error(ln, x, tnv(ref_), errors);
-      return false;
-    };
+  void store(const config_value& x) override {
+    ref_ = get<T>(x);
   }
 
 private:
   T& ref_;
 };
 
+/// Creates a config option that synchronizes with `storage`.
+template <class T>
+std::unique_ptr<config_option> make_config_option(const char* category,
+                                                  const char* name,
+                                                  const char* explanation) {
+  auto ptr = new config_option_impl<T>(category, name, explanation);
+  return std::unique_ptr<config_option>{ptr};
+}
 
+/// Creates a config option that synchronizes with `storage`.
 template <class T>
 std::unique_ptr<config_option>
-make_config_option(T& storage, const char* category,
-                   const char* name, const char* explanation) {
-  auto ptr = new config_option_impl<T>(storage, category, name, explanation);
+make_config_option(T& storage, const char* category, const char* name,
+                   const char* explanation) {
+  auto ptr = new syncing_config_option<T>(storage, category, name, explanation);
   return std::unique_ptr<config_option>{ptr};
 }
 

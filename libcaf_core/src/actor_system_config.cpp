@@ -36,6 +36,7 @@ using option_vector = actor_system_config::option_vector;
 const char actor_conf_prefix[] = "actor:";
 constexpr size_t actor_conf_prefix_size = 6;
 
+/*
 class actor_system_config_reader {
 public:
   using sink = std::function<void (size_t, config_value&,
@@ -80,6 +81,7 @@ private:
   std::map<std::string, sink> sinks_;
   named_actor_sink named_actor_sink_;
 };
+*/
 
 } // namespace <anonymous>
 
@@ -306,6 +308,7 @@ actor_system_config& actor_system_config::parse(message& args,
 
 actor_system_config& actor_system_config::parse(message& args,
                                                 std::istream& ini) {
+  /*
   // (2) content of the INI file overrides hard-coded defaults
   if (ini.good()) {
     using conf_sink = std::function<void (size_t, config_value&,
@@ -405,6 +408,7 @@ actor_system_config& actor_system_config::parse(message& args,
       cout << x.name() << "=" << x.to_string() << endl;
     });
   }
+  */
   return *this;
 }
 
@@ -427,8 +431,11 @@ actor_system_config& actor_system_config::set_impl(const char* cn,
     return ptr->full_name() == cn;
   });
   if (i != e) {
-    auto f = (*i)->to_sink();
-    f(0, cv, none);
+    auto& ptr = *i;
+    if (ptr->check(cv) == none) {
+      ptr->store(cv);
+      settings[ptr->full_name()] = std::move(cv);
+    }
   }
   return *this;
 }

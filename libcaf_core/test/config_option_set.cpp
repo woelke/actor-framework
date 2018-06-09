@@ -16,43 +16,25 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
-#include "caf/detail/parser/ec.hpp"
+#include "caf/config.hpp"
 
-#include "caf/error.hpp"
+#define CAF_SUITE config_option_set
+#include "caf/test/dsl.hpp"
+
+#include "caf/config_option_set.hpp"
 
 namespace {
 
-constexpr const char* tbl[] = {
-  "success",
-  "trailing_character",
-  "unexpected_eof",
-  "unexpected_character",
-  "negative_duration",
-  "duration_overflow",
-  "too_many_characters",
-  "illegal_escape_sequence",
-  "unexpected_newline",
-  "integer_overflow",
-  "integer_underflow",
-  "exponent_underflow",
-  "exponent_overflow",
-  "type_mismatch",
+struct fixture {
+
 };
 
 } // namespace <anonymous>
 
-namespace caf {
-namespace detail {
-namespace parser {
+CAF_TEST_FIXTURE_SCOPE(config_option_set_tests, fixture)
 
-error make_error(ec code) {
-  return {static_cast<uint8_t>(code), atom("parser")};
+CAF_TEST(todo) {
+  // implement me
 }
 
-const char* to_string(ec x) {
-  return tbl[static_cast<uint8_t>(x)];
-}
-
-} // namespace parser
-} // namespace detail
-} // namespace caf
+CAF_TEST_FIXTURE_SCOPE_END()

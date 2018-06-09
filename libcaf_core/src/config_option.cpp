@@ -71,17 +71,8 @@ std::string config_option::full_name() const {
   return res;
 }
 
-void config_option::report_type_error(size_t ln, config_value& x,
-                                      const char* expected,
-                                      optional<std::ostream&> out) {
-  if (!out)
-    return;
-  /*
-  type_name_visitor tnv;
-  *out << "error in line " << ln << ": expected "
-       << expected << " found "
-       << visit(tnv, x) << '\n';
-       */
+void config_option::store(const config_value&) {
+  // nop
 }
 
 } // namespace caf

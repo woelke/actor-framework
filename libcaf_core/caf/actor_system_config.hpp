@@ -82,6 +82,8 @@ public:
 
   using group_module_factory_vector = std::vector<group_module_factory>;
 
+  using settings_map = std::map<std::string, config_value>;
+
   // -- nested classes ---------------------------------------------------------
 
   using named_actor_config_map = hash_map<std::string, named_actor_config>;
@@ -111,6 +113,16 @@ public:
 
   actor_system_config(const actor_system_config&) = delete;
   actor_system_config& operator=(const actor_system_config&) = delete;
+
+  // -- settings ---------------------------------------------------------------
+
+  settings_map settings;
+
+  /// Sets a config by using its INI name `config_name` to `config_value`.
+  template <class T>
+  actor_system_config& set(const char* cn, T&& x) {
+    return set_impl(cn, config_value{std::forward<T>(x)});
+  }
 
   // -- modifiers --------------------------------------------------------------
 
@@ -235,12 +247,6 @@ public:
   actor_system_config& add_thread_hook(Ts&&... ts) {
     thread_hooks_.emplace_back(new Hook(std::forward<Ts>(ts)...));
     return *this;
-  }
-
-  /// Sets a config by using its INI name `config_name` to `config_value`.
-  template <class T>
-  actor_system_config& set(const char* cn, T&& x) {
-    return set_impl(cn, config_value{std::forward<T>(x)});
   }
 
   // -- parser and CLI state ---------------------------------------------------

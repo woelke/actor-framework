@@ -74,7 +74,7 @@ CAF_TEST(default_constructed) {
   config_value x;
   CAF_CHECK_EQUAL(holds_alternative<int64_t>(x), true);
   CAF_CHECK_EQUAL(get<int64_t>(x), 0);
-  CAF_CHECK_EQUAL(x.type_name(), config_value::type_name_of<int64_t>());
+  CAF_CHECK_EQUAL(x.type_name(), "integer");
 }
 
 CAF_TEST(positive integer) {
@@ -120,7 +120,7 @@ CAF_TEST(list) {
   using integer_list = std::vector<int64_t>;
   auto xs = make_config_value_list(1, 2, 3);
   CAF_CHECK_EQUAL(to_string(xs), "[1, 2, 3]");
-  CAF_CHECK_EQUAL(xs.type_name(), config_value::type_name_of<list>());
+  CAF_CHECK_EQUAL(xs.type_name(), "list");
   CAF_CHECK_EQUAL(holds_alternative<config_value::list>(xs), true);
   CAF_CHECK_EQUAL(holds_alternative<integer_list>(xs), true);
   CAF_CHECK_EQUAL(get<integer_list>(xs), integer_list({1, 2, 3}));
@@ -128,10 +128,10 @@ CAF_TEST(list) {
 
 CAF_TEST(convert_to_list) {
   config_value x{int64_t{42}};
-  CAF_CHECK_EQUAL(x.type_name(), config_value::type_name_of<int64_t>());
+  CAF_CHECK_EQUAL(x.type_name(), "integer");
   CAF_CHECK_EQUAL(to_string(x), "42");
   x.convert_to_list();
-  CAF_CHECK_EQUAL(x.type_name(), config_value::type_name_of<list>());
+  CAF_CHECK_EQUAL(x.type_name(), "list");
   CAF_CHECK_EQUAL(to_string(x), "[42]");
   x.convert_to_list();
   CAF_CHECK_EQUAL(to_string(x), "[42]");
